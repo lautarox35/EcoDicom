@@ -1,0 +1,16 @@
+Estudios/
+*.dcm
+!sample_images/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+estudios.db
+sample_images/captures/
+*.egg-info/
+.idea/
+.vscode/
+build/
+dist/
+EcoDICOM.spec
+!EcoDICOM-macos.spec
