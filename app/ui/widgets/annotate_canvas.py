@@ -48,12 +48,40 @@ class AnnotateCanvas(QWidget):
         if pix.isNull():
             self.clear_canvas()
             return False
+        return self.load_pixmap(pix)
+
+    def load_pixmap(self, pix: QPixmap) -> bool:
+        if pix.isNull():
+            self.clear_canvas()
+            return False
         self._base = pix
         self._overlay = QPixmap(pix.size())
         self._overlay.fill(Qt.GlobalColor.transparent)
         self._undo_stack.clear()
         self.update()
         return True
+
+    def composite_rgb(self) -> Optional["np.ndarray"]:
+        """Devuelve la imagen anotada como RGB uint8 (H, W, 3)."""
+        import numpy as np
+        from PySide6.QtCore import QBuffer, QIODevice
+        from PySide6.QtGui import QImage
+
+        pix = self.composite_pixmap()
+        if pix is None:
+            return None
+        image = pix.toImage().convertToFormat(QImage.Format.Format_RGB888)
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        data = bytes(buffer.data())
+        buffer.close()
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        pil = PILImage.open(BytesIO(data)).convert("RGB")
+        return np.asarray(pil, dtype=np.uint8).copy()
 
     def set_pen_color(self, color: QColor) -> None:
         self._pen_color = color

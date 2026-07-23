@@ -53,11 +53,61 @@ class ImagePreview(QWidget):
         tools.addWidget(self.combo_color)
 
         tools.addWidget(QLabel("Grosor:"))
+        self.lbl_thin = QLabel("─")
+        self.lbl_thin.setToolTip("Trazo fino")
+        tools.addWidget(self.lbl_thin)
+
         self.slider_width = QSlider(Qt.Orientation.Horizontal)
         self.slider_width.setRange(1, 24)
         self.slider_width.setValue(4)
-        self.slider_width.setMaximumWidth(120)
+        self.slider_width.setMinimumWidth(160)
+        self.slider_width.setMaximumWidth(220)
+        self.slider_width.setFixedHeight(28)
+        self.slider_width.setTickPosition(QSlider.TickPosition.NoTicks)
+        self.slider_width.setToolTip("Grosor del trazo (como control de volumen)")
+        # Estilo tipo “volumen”: línea horizontal + perilla redonda
+        self.slider_width.setStyleSheet(
+            """
+            QSlider::groove:horizontal {
+                border: none;
+                height: 4px;
+                background: #9e9e9e;
+                border-radius: 2px;
+                margin: 0 4px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #1976d2;
+                border-radius: 2px;
+            }
+            QSlider::add-page:horizontal {
+                background: #cfcfcf;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #ffffff;
+                border: 2px solid #1976d2;
+                width: 16px;
+                height: 16px;
+                margin: -7px 0;
+                border-radius: 9px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #e3f2fd;
+                border: 2px solid #0d47a1;
+            }
+            """
+        )
         tools.addWidget(self.slider_width)
+
+        self.lbl_thick = QLabel("━")
+        self.lbl_thick.setToolTip("Trazo grueso")
+        tools.addWidget(self.lbl_thick)
+
+        self.lbl_width_value = QLabel("4 px")
+        self.lbl_width_value.setMinimumWidth(40)
+        self.lbl_width_value.setStyleSheet("color: #444; font-weight: 600;")
+        tools.addWidget(self.lbl_width_value)
+
 
         self.btn_pen = QPushButton("Lápiz")
         self.btn_eraser = QPushButton("Borrar trazo")
@@ -90,13 +140,18 @@ class ImagePreview(QWidget):
         root.addWidget(group)
 
         self.combo_color.currentTextChanged.connect(self._on_color)
-        self.slider_width.valueChanged.connect(self.canvas.set_pen_width)
+        self.slider_width.valueChanged.connect(self._on_width_changed)
         self.btn_pen.clicked.connect(lambda: self.canvas.set_eraser(False))
         self.btn_eraser.clicked.connect(lambda: self.canvas.set_eraser(True))
         self.btn_undo.clicked.connect(self.canvas.undo)
         self.btn_clear.clicked.connect(self.canvas.clear_drawings)
         self.btn_save_draw.clicked.connect(lambda: self.save_current_annotation(False))
         self._on_color(self.combo_color.currentText())
+        self._on_width_changed(self.slider_width.value())
+
+    def _on_width_changed(self, value: int) -> None:
+        self.canvas.set_pen_width(value)
+        self.lbl_width_value.setText(f"{value} px")
 
     def images(self) -> list[CapturedImage]:
         return list(self._images)
