@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
 from app.config import APP_VERSION
 from app.device.capture import CameraDevice, list_camera_devices, save_bgr_frame
 from app.device.easycap import easycap_status_message
-from app.device.welld_wed3100 import ConnectionStatus, connect_wed3100
 from app.models.image import CapturedImage
 from app.storage.database import Database
 from app.storage.filesystem import export_study_dicoms
@@ -86,7 +85,6 @@ class MainWindow(QMainWindow):
         root.addLayout(capture_row)
 
         buttons = QHBoxLayout()
-        self.btn_connect = QPushButton("Conectar ecógrafo")
         self.btn_import = QPushButton("Importar imagen")
         self.btn_capture = QPushButton("Capturar imagen")
         self.btn_create = QPushButton("Crear DICOM")
@@ -95,7 +93,6 @@ class MainWindow(QMainWindow):
         self.btn_updates = QPushButton("Buscar actualizaciones")
 
         for btn in (
-            self.btn_connect,
             self.btn_import,
             self.btn_capture,
             self.btn_create,
@@ -105,10 +102,6 @@ class MainWindow(QMainWindow):
         ):
             buttons.addWidget(btn)
         root.addLayout(buttons)
-
-        self.device_label = QLabel("Estado ecógrafo: Desconectado")
-        self.device_label.setStyleSheet("color: #666;")
-        root.addWidget(self.device_label)
 
         self.capture_label = QLabel("easierCAP: —")
         self.capture_label.setStyleSheet("color: #666;")
@@ -120,7 +113,6 @@ class MainWindow(QMainWindow):
             "Elija AV TO USB2.0 [easierCAP] y pulse Iniciar vista en vivo."
         )
 
-        self.btn_connect.clicked.connect(self.on_connect)
         self.btn_import.clicked.connect(self.on_import)
         self.btn_capture.clicked.connect(self.on_capture)
         self.btn_create.clicked.connect(self.on_create_dicom)
@@ -202,22 +194,6 @@ class MainWindow(QMainWindow):
         current = self._cameras[preferred_row]
         self.statusBar().showMessage(f"Capturadora lista: {current.label}")
         self.start_live_preview()
-
-    def on_connect(self) -> None:
-        result = connect_wed3100()
-        self.device_label.setText(f"Estado ecógrafo: {result.status.value}")
-        icon = QMessageBox.Icon.Information
-        if result.status == ConnectionStatus.ERROR:
-            icon = QMessageBox.Icon.Warning
-        elif result.status == ConnectionStatus.DISCONNECTED:
-            icon = QMessageBox.Icon.Information
-        msg = QMessageBox(self)
-        msg.setIcon(icon)
-        msg.setWindowTitle("Conexión Well-D WED-3100")
-        msg.setText(result.message)
-        msg.exec()
-        self.statusBar().showMessage(result.status.value)
-        self.refresh_capture_devices()
 
     def on_import(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
