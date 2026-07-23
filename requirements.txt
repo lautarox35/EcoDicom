@@ -3,4 +3,5 @@ pydicom>=2.4.0
 numpy>=1.26.0
 Pillow>=10.0.0
 opencv-python>=4.8.0
+cv2-enumerate-cameras>=1.1.0
 pyusb>=1.2.1

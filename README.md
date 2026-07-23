@@ -14,8 +14,9 @@ RadiAnt o Weasis.
 | Video / SVGA | Sí — puerto de video / SVGA |
 | Protocolo | Propietario (software de estación Well.d); sin API pública |
 
-**Estrategia del MVP:** importación manual de JPG/PNG (ruta principal) + captura
-OpenCV opcional. La conexión USB directa queda como stub.
+**Estrategia del MVP:** captura desde **easierCAP** (USB video del puerto
+Video/SVGA del ecógrafo) + importación manual de JPG/PNG. La conexión USB
+directa Well.d queda como stub.
 
 ## Requisitos
 
@@ -95,11 +96,28 @@ Estudios/
       <StudyUID>_img01.dcm
 ```
 
+## Captura con easierCAP (recomendado)
+
+Conecte el puerto **Video / SVGA** del WED-3100 a la entrada composite/RCA de la
+**easierCAP**, y la easierCAP al PC por USB.
+
+1. Encienda el ecógrafo y muestre la imagen en pantalla.
+2. Abra EcoDICOM → el estado debe indicar `easierCAP detectada`.
+3. En **Capturadora**, elija el dispositivo marcado `[easierCAP]` (si hay varios).
+4. Pulse **Capturar imagen**.
+5. Complete paciente/estudio → **Crear DICOM** / **Guardar estudio**.
+
+Si Windows muestra el dispositivo como `AV to USB` / MacroSilicon y no aparece
+en EcoDICOM, pulse **Actualizar dispositivos**. En macOS conceda permiso de
+**Cámara** a la app.
+
+VID/PID típico: `534D:0021` (MacroSilicon MS210x).
+
 ## Uso
 
 1. Complete datos del paciente (panel izquierdo).
 2. Complete datos del estudio (panel derecho).
-3. **Importar imagen** (JPG/PNG) o **Capturar imagen**.
+3. **Capturar imagen** (easierCAP) o **Importar imagen** (JPG/PNG).
 4. **Crear DICOM** o **Guardar estudio**.
 5. En Mac, abra los `.dcm` con **Horos**.
 

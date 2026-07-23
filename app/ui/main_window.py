@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -16,13 +18,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import DEFAULT_CAMERA_INDEX
-from app.device.capture import capture_frame
+from app.device.capture import CameraDevice, list_camera_devices, save_bgr_frame
+from app.device.easycap import easycap_status_message
 from app.device.welld_wed3100 import ConnectionStatus, connect_wed3100
 from app.models.image import CapturedImage
 from app.storage.database import Database
 from app.storage.filesystem import export_study_dicoms
 from app.ui.widgets.image_preview import ImagePreview
+from app.ui.widgets.live_preview import LivePreview
 from app.ui.widgets.patient_form import PatientForm
 from app.ui.widgets.study_form import StudyForm
 
@@ -32,8 +35,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.db = db
         self.setWindowTitle("EcoDICOM - Ecografía veterinaria a DICOM")
-        self.resize(1200, 720)
+        self.resize(1280, 800)
+        self._cameras: list[CameraDevice] = []
         self._build()
+        self.refresh_capture_devices()
 
     def _build(self) -> None:
         central = QWidget()
@@ -42,13 +47,38 @@ class MainWindow(QMainWindow):
 
         panels = QHBoxLayout()
         self.patient_form = PatientForm()
+
+        center = QVBoxLayout()
+        self.live_preview = LivePreview()
         self.image_preview = ImagePreview()
+        center.addWidget(self.live_preview, stretch=3)
+        center.addWidget(self.image_preview, stretch=2)
+        center_wrap = QWidget()
+        center_wrap.setLayout(center)
+
         self.study_form = StudyForm()
 
         panels.addWidget(self.patient_form, stretch=2)
-        panels.addWidget(self.image_preview, stretch=3)
+        panels.addWidget(center_wrap, stretch=4)
         panels.addWidget(self.study_form, stretch=2)
         root.addLayout(panels, stretch=1)
+
+        capture_row = QHBoxLayout()
+        capture_row.addWidget(QLabel("Capturadora:"))
+        self.combo_camera = QComboBox()
+        self.combo_camera.setMinimumWidth(280)
+        self.btn_refresh_cameras = QPushButton("Actualizar dispositivos")
+        self.btn_start_preview = QPushButton("Iniciar vista en vivo")
+        capture_row.addWidget(self.combo_camera, stretch=1)
+        capture_row.addWidget(self.btn_refresh_cameras)
+        capture_row.addWidget(self.btn_start_preview)
+        self.chk_enhance = QCheckBox("Mejorar calidad")
+        self.chk_enhance.setChecked(True)
+        self.chk_enhance.setToolTip(
+            "Contraste (CLAHE), nitidez y upscale al capturar para DICOM."
+        )
+        capture_row.addWidget(self.chk_enhance)
+        root.addLayout(capture_row)
 
         buttons = QHBoxLayout()
         self.btn_connect = QPushButton("Conectar ecógrafo")
@@ -71,15 +101,96 @@ class MainWindow(QMainWindow):
         self.device_label.setStyleSheet("color: #666;")
         root.addWidget(self.device_label)
 
+        self.capture_label = QLabel("easierCAP: —")
+        self.capture_label.setStyleSheet("color: #666;")
+        root.addWidget(self.capture_label)
+
         status = QStatusBar()
         self.setStatusBar(status)
-        status.showMessage("Listo — priorice Importar imagen mientras no haya protocolo USB.")
+        status.showMessage(
+            "Elija AV TO USB2.0 [easierCAP] y pulse Iniciar vista en vivo."
+        )
 
         self.btn_connect.clicked.connect(self.on_connect)
         self.btn_import.clicked.connect(self.on_import)
         self.btn_capture.clicked.connect(self.on_capture)
         self.btn_create.clicked.connect(self.on_create_dicom)
         self.btn_save.clicked.connect(self.on_save_study)
+        self.btn_refresh_cameras.clicked.connect(self.refresh_capture_devices)
+        self.btn_start_preview.clicked.connect(self.start_live_preview)
+        self.combo_camera.currentIndexChanged.connect(self._on_camera_changed)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self.live_preview.stop()
+        super().closeEvent(event)
+
+    def _selected_camera(self) -> CameraDevice | None:
+        index = self.combo_camera.currentData()
+        if index is None:
+            return None
+        for cam in self._cameras:
+            if cam.index == int(index):
+                return cam
+        return None
+
+    def start_live_preview(self) -> None:
+        cam = self._selected_camera()
+        if cam is None:
+            QMessageBox.warning(
+                self,
+                "Vista en vivo",
+                "No hay capturadora seleccionada. Elija AV TO USB2.0 [easierCAP].",
+            )
+            return
+        self.live_preview.start(
+            camera_index=cam.index,
+            backend=cam.backend,
+            for_easycap=cam.is_easycap,
+        )
+        self.statusBar().showMessage(f"Vista en vivo: {cam.label}")
+
+    def _on_camera_changed(self, _row: int) -> None:
+        if self._selected_camera() is not None and self.live_preview.is_running():
+            self.start_live_preview()
+
+    def refresh_capture_devices(self) -> None:
+        self.live_preview.stop()
+        previous = self.combo_camera.currentData()
+        self.combo_camera.blockSignals(True)
+        self.combo_camera.clear()
+        self._cameras = list_camera_devices()
+
+        detected, msg = easycap_status_message()
+        color = "#2e7d32" if detected else "#c62828"
+        self.capture_label.setText(msg)
+        self.capture_label.setStyleSheet(f"color: {color};")
+
+        if not self._cameras:
+            self.combo_camera.addItem("(sin dispositivos de video)", None)
+            self.btn_capture.setEnabled(False)
+            self.combo_camera.blockSignals(False)
+            self.statusBar().showMessage(
+                "Sin capturadora. Conecte la easierCAP y pulse Actualizar dispositivos."
+            )
+            return
+
+        preferred_row = 0
+        for i, cam in enumerate(self._cameras):
+            self.combo_camera.addItem(cam.label, cam.index)
+            if cam.is_easycap:
+                preferred_row = i
+
+        if previous is not None:
+            idx = self.combo_camera.findData(previous)
+            if idx >= 0:
+                preferred_row = idx
+
+        self.combo_camera.setCurrentIndex(preferred_row)
+        self.combo_camera.blockSignals(False)
+        self.btn_capture.setEnabled(True)
+        current = self._cameras[preferred_row]
+        self.statusBar().showMessage(f"Capturadora lista: {current.label}")
+        self.start_live_preview()
 
     def on_connect(self) -> None:
         result = connect_wed3100()
@@ -95,6 +206,7 @@ class MainWindow(QMainWindow):
         msg.setText(result.message)
         msg.exec()
         self.statusBar().showMessage(result.status.value)
+        self.refresh_capture_devices()
 
     def on_import(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -110,13 +222,34 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Importadas {len(paths)} imagen(es).")
 
     def on_capture(self) -> None:
+        # Preferir el frame de la vista en vivo (evita conflicto de dispositivo en Windows)
+        frame = self.live_preview.latest_frame()
+        if frame is None:
+            cam = self._selected_camera()
+            if cam is None:
+                QMessageBox.warning(
+                    self,
+                    "Captura",
+                    "No hay capturadora seleccionada. Conecte la easierCAP y actualice dispositivos.",
+                )
+                return
+            self.start_live_preview()
+            QMessageBox.information(
+                self,
+                "Captura",
+                "Se inició la vista en vivo. Cuando vea la imagen del ecógrafo, "
+                "pulse otra vez Capturar imagen.",
+            )
+            return
         try:
-            path = capture_frame(DEFAULT_CAMERA_INDEX)
+            path = save_bgr_frame(frame, enhance=self.chk_enhance.isChecked())
         except RuntimeError as exc:
             QMessageBox.warning(self, "Captura", str(exc))
             return
         self.image_preview.add_image(CapturedImage(path=path, source="capture"))
-        self.statusBar().showMessage(f"Captura guardada: {path.name}")
+        self.statusBar().showMessage(
+            f"Captura guardada: {path.name} — puede dibujar sobre ella abajo."
+        )
 
     def _validate_ready(self) -> bool:
         patient = self.patient_form.get_patient()
@@ -137,6 +270,7 @@ class MainWindow(QMainWindow):
         return True
 
     def on_create_dicom(self) -> None:
+        self.image_preview.save_current_annotation(silent=True)
         if not self._validate_ready():
             return
         patient = self.patient_form.get_patient()
@@ -150,7 +284,6 @@ class MainWindow(QMainWindow):
             return
 
         self.study_form.set_uids(study.study_instance_uid, study.series_instance_uid)
-        # Refresh preview list with dicom paths
         self.image_preview.clear()
         for img in exported:
             self.image_preview.add_image(img)
@@ -163,13 +296,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"DICOM en {folder}")
 
     def on_save_study(self) -> None:
+        self.image_preview.save_current_annotation(silent=True)
         if not self._validate_ready():
             return
         patient = self.patient_form.get_patient()
         study = self.study_form.get_study()
         images = self.image_preview.images()
 
-        # Si aún no hay DICOM, generarlos
         if any(img.dicom_path is None for img in images):
             try:
                 folder, exported = export_study_dicoms(patient, study, images)
