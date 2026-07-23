@@ -49,7 +49,8 @@ def connect_wed3100() -> WellDConnectionResult:
                     f"Se encontró un dispositivo USB compatible por nombre: "
                     f"{dev.name} (VID={dev.vid}, PID={dev.pid}). "
                     "El protocolo Well.d aún no está implementado. "
-                    "Use Importar imagen o Capturar imagen (capturadora de video)."
+                    "Use Capturar imagen con la easierCAP (puerto Video/SVGA) "
+                    "o Importar imagen."
                 ),
                 device=dev,
                 usb_count=len(all_usb),
@@ -59,8 +60,8 @@ def connect_wed3100() -> WellDConnectionResult:
             status=ConnectionStatus.DISCONNECTED,
             message=(
                 f"No se detectó un Well-D WED-3100 ({len(all_usb)} dispositivos USB presentes). "
-                "El MVP funciona con Importar imagen (JPG/PNG) o Capturar desde "
-                "capturadora de video (puerto SVGA/Video del ecógrafo)."
+                "Use la easierCAP: Video/SVGA del ecógrafo → easierCAP → USB al PC, "
+                "luego Capturar imagen; o Importar imagen (JPG/PNG)."
             ),
             usb_count=len(all_usb),
         )

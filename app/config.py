@@ -37,6 +37,26 @@ APP_VERSION = "0.1.0"
 
 DEFAULT_CAMERA_INDEX = 0
 
+# Resolución preferida de captura (easierCAP / MS210x)
+CAPTURE_WIDTH = 720
+CAPTURE_HEIGHT = 480
+CAPTURE_WARMUP_FRAMES = 12
+# Intentos de resolución de mayor a menor calidad usable
+CAPTURE_RESOLUTION_CANDIDATES = (
+    (1280, 720),
+    (800, 600),
+    (720, 576),  # PAL
+    (720, 480),  # NTSC
+    (640, 480),
+)
+
+# Realce de imagen (composite USB suele beneficiarse)
+ENHANCE_ENABLED = True
+ENHANCE_CLAHE_CLIP = 2.2
+ENHANCE_DENOISE = 5
+ENHANCE_SHARPEN = 0.55
+ENHANCE_UPSCALE = 1.5  # 720→~1080 para DICOM/visualización
+
 BUNDLE_ID = "com.ecodicom.app"
 
 
