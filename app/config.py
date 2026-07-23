@@ -33,7 +33,9 @@ SAMPLE_IMAGES_DIR = PROJECT_ROOT / "sample_images"
 UID_PREFIX = "1.2.826.0.1.3680043.10.543"
 
 APP_NAME = "EcoDICOM"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.2"
+
+GITHUB_RELEASES_URL = "https://github.com/lautarox35/EcoDicom/releases"
 
 DEFAULT_CAMERA_INDEX = 0
 

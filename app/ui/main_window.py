@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config import APP_VERSION
 from app.device.capture import CameraDevice, list_camera_devices, save_bgr_frame
 from app.device.easycap import easycap_status_message
 from app.device.welld_wed3100 import ConnectionStatus, connect_wed3100
@@ -29,13 +32,14 @@ from app.ui.widgets.live_preview import LivePreview
 from app.ui.widgets.patient_form import PatientForm
 from app.ui.widgets.studies_browser import StudiesBrowserDialog
 from app.ui.widgets.study_form import StudyForm
+from app.update_check import RELEASES_PAGE, check_latest_release
 
 
 class MainWindow(QMainWindow):
     def __init__(self, db: Database) -> None:
         super().__init__()
         self.db = db
-        self.setWindowTitle("EcoDICOM - Ecografía veterinaria a DICOM")
+        self.setWindowTitle(f"EcoDICOM {APP_VERSION} - Ecografía veterinaria a DICOM")
         self.resize(1280, 800)
         self._cameras: list[CameraDevice] = []
         self._build()
@@ -88,6 +92,7 @@ class MainWindow(QMainWindow):
         self.btn_create = QPushButton("Crear DICOM")
         self.btn_save = QPushButton("Guardar estudio")
         self.btn_studies = QPushButton("Ver estudios DICOM")
+        self.btn_updates = QPushButton("Buscar actualizaciones")
 
         for btn in (
             self.btn_connect,
@@ -96,6 +101,7 @@ class MainWindow(QMainWindow):
             self.btn_create,
             self.btn_save,
             self.btn_studies,
+            self.btn_updates,
         ):
             buttons.addWidget(btn)
         root.addLayout(buttons)
@@ -120,6 +126,7 @@ class MainWindow(QMainWindow):
         self.btn_create.clicked.connect(self.on_create_dicom)
         self.btn_save.clicked.connect(self.on_save_study)
         self.btn_studies.clicked.connect(self.on_view_studies)
+        self.btn_updates.clicked.connect(self.on_check_updates)
         self.btn_refresh_cameras.clicked.connect(self.refresh_capture_devices)
         self.btn_start_preview.clicked.connect(self.start_live_preview)
         self.combo_camera.currentIndexChanged.connect(self._on_camera_changed)
@@ -324,6 +331,45 @@ class MainWindow(QMainWindow):
     def on_view_studies(self) -> None:
         dialog = StudiesBrowserDialog(self.db, parent=self)
         dialog.exec()
+
+    def on_check_updates(self) -> None:
+        self.statusBar().showMessage("Consultando GitHub Releases…")
+        info = check_latest_release()
+        self.statusBar().showMessage(info.message.split("\n")[0])
+
+        if info.update_available:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("Actualización disponible")
+            box.setText(info.message)
+            box.setInformativeText(
+                "Se abrirá la página de Releases para descargar el zip."
+            )
+            open_btn = box.addButton(
+                "Abrir Releases", QMessageBox.ButtonRole.AcceptRole
+            )
+            box.addButton("Cerrar", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is open_btn:
+                QDesktopServices.openUrl(QUrl(info.html_url or RELEASES_PAGE))
+            return
+
+        # Sin update o error de red: mensaje simple + opción de abrir Releases
+        box = QMessageBox(self)
+        box.setIcon(
+            QMessageBox.Icon.Warning
+            if info.message.startswith("Sin conexión")
+            or "HTTP" in info.message
+            or "No hay releases" in info.message
+            else QMessageBox.Icon.Information
+        )
+        box.setWindowTitle("Buscar actualizaciones")
+        box.setText(info.message)
+        open_btn = box.addButton("Abrir Releases", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Cerrar", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            QDesktopServices.openUrl(QUrl(info.html_url or RELEASES_PAGE))
 
     def on_save_study(self) -> None:
         self.image_preview.save_current_annotation(silent=True)

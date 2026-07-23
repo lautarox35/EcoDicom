@@ -10,10 +10,18 @@ binaries = []
 hiddenimports = [
     "app",
     "app.ui.main_window",
+    "app.ui.widgets.live_preview",
+    "app.ui.widgets.studies_browser",
+    "app.ui.widgets.annotate_canvas",
     "app.dicom.generator",
+    "app.dicom.viewer",
     "app.device.capture",
+    "app.device.easycap",
+    "app.device.enhance",
     "app.device.detector",
     "app.storage.database",
+    "app.update_check",
+    "cv2_enumerate_cameras",
 ]
 
 for pkg in ("PySide6", "pydicom"):
