@@ -27,6 +27,7 @@ from app.storage.filesystem import export_study_dicoms
 from app.ui.widgets.image_preview import ImagePreview
 from app.ui.widgets.live_preview import LivePreview
 from app.ui.widgets.patient_form import PatientForm
+from app.ui.widgets.studies_browser import StudiesBrowserDialog
 from app.ui.widgets.study_form import StudyForm
 
 
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         self.btn_capture = QPushButton("Capturar imagen")
         self.btn_create = QPushButton("Crear DICOM")
         self.btn_save = QPushButton("Guardar estudio")
+        self.btn_studies = QPushButton("Ver estudios DICOM")
 
         for btn in (
             self.btn_connect,
@@ -93,6 +95,7 @@ class MainWindow(QMainWindow):
             self.btn_capture,
             self.btn_create,
             self.btn_save,
+            self.btn_studies,
         ):
             buttons.addWidget(btn)
         root.addLayout(buttons)
@@ -116,6 +119,7 @@ class MainWindow(QMainWindow):
         self.btn_capture.clicked.connect(self.on_capture)
         self.btn_create.clicked.connect(self.on_create_dicom)
         self.btn_save.clicked.connect(self.on_save_study)
+        self.btn_studies.clicked.connect(self.on_view_studies)
         self.btn_refresh_cameras.clicked.connect(self.refresh_capture_devices)
         self.btn_start_preview.clicked.connect(self.start_live_preview)
         self.combo_camera.currentIndexChanged.connect(self._on_camera_changed)
@@ -288,12 +292,38 @@ class MainWindow(QMainWindow):
         for img in exported:
             self.image_preview.add_image(img)
 
+        image_rows = [
+            {
+                "source_path": str(img.path),
+                "dicom_path": str(img.dicom_path) if img.dicom_path else None,
+                "sop_instance_uid": img.sop_instance_uid,
+                "source": img.source,
+            }
+            for img in exported
+        ]
+        try:
+            self.db.save_study(patient, study, folder, image_rows)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                "DICOM creado",
+                f"Archivos generados en:\n{folder}\n\n"
+                f"No se pudo registrar en la base local: {exc}",
+            )
+            self.statusBar().showMessage(f"DICOM en {folder} (sin registro DB)")
+            return
+
         QMessageBox.information(
             self,
             "DICOM creado",
-            f"Se generaron {len(exported)} archivo(s) en:\n{folder}",
+            f"Se generaron {len(exported)} archivo(s) en:\n{folder}\n\n"
+            "Ya puede verlos en «Ver estudios DICOM».",
         )
         self.statusBar().showMessage(f"DICOM en {folder}")
+
+    def on_view_studies(self) -> None:
+        dialog = StudiesBrowserDialog(self.db, parent=self)
+        dialog.exec()
 
     def on_save_study(self) -> None:
         self.image_preview.save_current_annotation(silent=True)
