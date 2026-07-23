@@ -361,11 +361,12 @@ class StudiesBrowserDialog(QDialog):
         return patient, study
 
     def refresh(self) -> None:
-        # Limpiar registros huérfanos (carpetas borradas a mano)
+        # Limpiar registros huérfanos y carpetas vacías en disco
         try:
             purged = self.db.purge_orphaned_studies()
         except Exception:  # noqa: BLE001
             purged = 0
+        cleaned_dirs = self._cleanup_empty_study_dirs()
 
         self.tree.clear()
         self.file_list.clear()
@@ -376,8 +377,13 @@ class StudiesBrowserDialog(QDialog):
 
         studies = self.db.list_recent_studies(limit=200)
         label_db = f"{len(studies)} estudio(s)"
+        extras = []
         if purged:
-            label_db += f" · {purged} huérfano(s) quitado(s)"
+            extras.append(f"{purged} huérfano(s) DB")
+        if cleaned_dirs:
+            extras.append(f"{cleaned_dirs} carpeta(s) vacía(s)")
+        if extras:
+            label_db += " · " + " · ".join(extras)
         root_db = QTreeWidgetItem(["Base de datos", label_db])
         self.tree.addTopLevelItem(root_db)
         for study in studies:
@@ -400,8 +406,7 @@ class StudiesBrowserDialog(QDialog):
             for patient_dir in sorted(STUDIES_DIR.iterdir()):
                 if not patient_dir.is_dir():
                     continue
-                p_item = QTreeWidgetItem([patient_dir.name, "paciente"])
-                disk_root.addChild(p_item)
+                date_items: list[QTreeWidgetItem] = []
                 for date_dir in sorted(patient_dir.iterdir(), reverse=True):
                     if not date_dir.is_dir():
                         continue
@@ -420,8 +425,54 @@ class StudiesBrowserDialog(QDialog):
                             "files": [str(p) for p in dcms],
                         },
                     )
+                    date_items.append(d_item)
+                # No listar pacientes sin .dcm (carpetas vacías residuales)
+                if not date_items:
+                    continue
+                p_item = QTreeWidgetItem(
+                    [patient_dir.name, f"{len(date_items)} fecha(s)"]
+                )
+                p_item.setData(
+                    0,
+                    Qt.ItemDataRole.UserRole,
+                    {"kind": "patient_folder", "folder": str(patient_dir)},
+                )
+                for d_item in date_items:
                     p_item.addChild(d_item)
+                disk_root.addChild(p_item)
         disk_root.setExpanded(True)
+
+    def _cleanup_empty_study_dirs(self) -> int:
+        """Borra carpetas de fecha/paciente vacías bajo Estudios/."""
+        removed = 0
+        if not STUDIES_DIR.is_dir():
+            return removed
+        # Primero fechas vacías, luego pacientes vacíos
+        for patient_dir in list(STUDIES_DIR.iterdir()):
+            if not patient_dir.is_dir():
+                continue
+            for date_dir in list(patient_dir.iterdir()):
+                if not date_dir.is_dir():
+                    continue
+                try:
+                    has_dcm = any(date_dir.glob("*.dcm"))
+                    if not has_dcm and not any(date_dir.iterdir()):
+                        date_dir.rmdir()
+                        removed += 1
+                    elif not has_dcm:
+                        # Carpeta con basura no-dcm: si solo quedan vacíos, intentar limpiar
+                        if not any(date_dir.iterdir()):
+                            date_dir.rmdir()
+                            removed += 1
+                except OSError:
+                    pass
+            try:
+                if patient_dir.is_dir() and not any(patient_dir.iterdir()):
+                    patient_dir.rmdir()
+                    removed += 1
+            except OSError:
+                pass
+        return removed
 
     def _on_study_selected(
         self,
@@ -679,25 +730,64 @@ class StudiesBrowserDialog(QDialog):
             confirm = QMessageBox.question(
                 self,
                 "Borrar carpeta",
-                f"¿Borrar {len(files)} archivo(s) DICOM en?\n{folder}",
+                f"¿Borrar {len(files)} archivo(s) DICOM y sus registros en la base?\n{folder}",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if confirm != QMessageBox.StandardButton.Yes:
                 return
-            for path in files:
-                try:
-                    self.db.delete_image_record(str(path))
-                    path.unlink()
-                except OSError:
-                    pass
+            try:
+                self.db.delete_studies_for_folder(folder)
+                for path in files:
+                    try:
+                        if path.is_file():
+                            path.unlink()
+                    except OSError:
+                        pass
+                self._cleanup_empty_study_dirs()
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.critical(self, "Error", str(exc))
+                return
             self.refresh()
-            QMessageBox.information(self, "Borrado", "Archivos de la carpeta eliminados.")
+            QMessageBox.information(self, "Borrado", "Carpeta y registros eliminados.")
+            return
+
+        if data.get("kind") == "patient_folder":
+            folder = Path(data["folder"])
+            confirm = QMessageBox.question(
+                self,
+                "Borrar paciente (carpeta)",
+                f"¿Borrar toda la carpeta del paciente y sus DICOM?\n{folder}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                if folder.is_dir():
+                    for date_dir in list(folder.iterdir()):
+                        if date_dir.is_dir():
+                            self.db.delete_studies_for_folder(date_dir)
+                            for path in date_dir.glob("*.dcm"):
+                                try:
+                                    path.unlink()
+                                except OSError:
+                                    pass
+                    self._cleanup_empty_study_dirs()
+                    # Si aún queda la carpeta paciente, forzar borrado vacío
+                    if folder.is_dir() and not any(folder.rglob("*.dcm")):
+                        import shutil
+
+                        shutil.rmtree(folder, ignore_errors=True)
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.critical(self, "Error", str(exc))
+                return
+            self.refresh()
+            QMessageBox.information(self, "Borrado", "Carpeta de paciente eliminada.")
             return
 
         QMessageBox.information(
             self,
             "Borrar",
-            "Seleccione un estudio de la base de datos o una carpeta de fecha.",
+            "Seleccione un estudio (Base de datos) o una carpeta bajo Estudios/.",
         )
 
     def _files_for_current(self) -> list[Path]:

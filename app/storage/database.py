@@ -354,29 +354,44 @@ class Database:
     def delete_study(self, study_db_id: int, delete_files: bool = True) -> list[str]:
         """
         Borra estudio e imágenes de la DB.
-        Si delete_files=True, elimina los .dcm listados (no borra carpetas enteras ajenas).
-        Devuelve rutas borradas.
+        Si el paciente queda sin estudios, también se elimina (libera el PatientID).
+        Si delete_files=True, elimina los .dcm y carpetas vacías.
         """
         removed: list[str] = []
+        folder_path: Optional[str] = None
+        patient_db_id: Optional[int] = None
+        image_paths: list[str] = []
+
         with self.connect() as conn:
+            study = conn.execute(
+                "SELECT patient_db_id, folder_path FROM studies WHERE id = ?",
+                (study_db_id,),
+            ).fetchone()
+            if not study:
+                return removed
+            patient_db_id = int(study["patient_db_id"])
+            folder_path = study["folder_path"]
             images = conn.execute(
                 "SELECT dicom_path FROM images WHERE study_db_id = ?",
                 (study_db_id,),
             ).fetchall()
-            study = conn.execute(
-                "SELECT folder_path FROM studies WHERE id = ?",
-                (study_db_id,),
-            ).fetchone()
+            image_paths = [str(i["dicom_path"]) for i in images if i["dicom_path"]]
+
             conn.execute("DELETE FROM images WHERE study_db_id = ?", (study_db_id,))
             conn.execute("DELETE FROM studies WHERE id = ?", (study_db_id,))
 
+            remaining = conn.execute(
+                "SELECT COUNT(*) AS n FROM studies WHERE patient_db_id = ?",
+                (patient_db_id,),
+            ).fetchone()
+            if remaining and int(remaining["n"]) == 0:
+                conn.execute("DELETE FROM patients WHERE id = ?", (patient_db_id,))
+            conn.commit()
+
         if delete_files:
-            paths: list[Path] = []
-            for img in images:
-                if img["dicom_path"]:
-                    paths.append(Path(img["dicom_path"]))
-            if study and study["folder_path"]:
-                folder = Path(study["folder_path"])
+            paths: list[Path] = [Path(p) for p in image_paths]
+            if folder_path:
+                folder = Path(folder_path)
                 if folder.is_dir():
                     paths.extend(folder.glob("*.dcm"))
             seen: set[str] = set()
@@ -391,16 +406,99 @@ class Database:
                         removed.append(str(path))
                 except OSError:
                     pass
+            self._remove_empty_dirs(folder_path)
         return removed
 
+    def _remove_empty_dirs(self, folder_path: Optional[str]) -> None:
+        if not folder_path:
+            return
+        folder = Path(folder_path)
+        try:
+            if folder.is_dir() and not any(folder.iterdir()):
+                folder.rmdir()
+            parent = folder.parent
+            if parent.is_dir() and not any(parent.iterdir()):
+                # Solo vaciar carpetas bajo Estudios/
+                from app.config import STUDIES_DIR
+
+                if STUDIES_DIR in parent.parents or parent == STUDIES_DIR:
+                    parent.rmdir()
+        except OSError:
+            pass
+
     def delete_image_record(self, dicom_path: str) -> None:
+        """Borra el registro de imagen; si el estudio queda vacío, lo elimina (y paciente huérfano)."""
         with self.connect() as conn:
+            row = conn.execute(
+                "SELECT study_db_id FROM images WHERE dicom_path = ?",
+                (dicom_path,),
+            ).fetchone()
             conn.execute("DELETE FROM images WHERE dicom_path = ?", (dicom_path,))
+            if row:
+                study_db_id = int(row["study_db_id"])
+                left = conn.execute(
+                    "SELECT COUNT(*) AS n FROM images WHERE study_db_id = ?",
+                    (study_db_id,),
+                ).fetchone()
+                if left and int(left["n"]) == 0:
+                    study = conn.execute(
+                        "SELECT patient_db_id, folder_path FROM studies WHERE id = ?",
+                        (study_db_id,),
+                    ).fetchone()
+                    conn.execute("DELETE FROM studies WHERE id = ?", (study_db_id,))
+                    if study:
+                        patient_db_id = int(study["patient_db_id"])
+                        rem = conn.execute(
+                            "SELECT COUNT(*) AS n FROM studies WHERE patient_db_id = ?",
+                            (patient_db_id,),
+                        ).fetchone()
+                        if rem and int(rem["n"]) == 0:
+                            conn.execute(
+                                "DELETE FROM patients WHERE id = ?", (patient_db_id,)
+                            )
+            conn.commit()
+
+    def delete_studies_for_folder(self, folder: Path) -> int:
+        """Elimina de la DB todos los estudios asociados a una carpeta."""
+        try:
+            folder_resolved = folder.resolve()
+        except OSError:
+            folder_resolved = folder
+        ids: list[int] = []
+        with self.connect() as conn:
+            for row in conn.execute("SELECT id, folder_path FROM studies").fetchall():
+                fp = row["folder_path"]
+                if not fp:
+                    continue
+                try:
+                    if Path(fp).resolve() == folder_resolved:
+                        ids.append(int(row["id"]))
+                except OSError:
+                    if str(fp) == str(folder):
+                        ids.append(int(row["id"]))
+            for row in conn.execute(
+                "SELECT DISTINCT study_db_id, dicom_path FROM images"
+            ).fetchall():
+                dcm = row["dicom_path"]
+                if not dcm:
+                    continue
+                try:
+                    if Path(dcm).resolve().parent == folder_resolved:
+                        ids.append(int(row["study_db_id"]))
+                except OSError:
+                    if Path(dcm).parent == folder:
+                        ids.append(int(row["study_db_id"]))
+        removed = 0
+        for sid in sorted(set(ids)):
+            self.delete_study(sid, delete_files=False)
+            removed += 1
+        return removed
 
     def purge_orphaned_studies(self) -> int:
         """
         Elimina de la DB estudios sin carpeta ni archivos .dcm en disco
         (p. ej. borrados manualmente desde el Explorador).
+        También limpia pacientes sin estudios.
         """
         removed = 0
         for study in self.list_recent_studies(limit=500):
@@ -422,5 +520,18 @@ class Database:
             if not has_file:
                 self.delete_study(study_id, delete_files=False)
                 removed += 1
+
+        # Pacientes huérfanos (sin ningún estudio)
+        with self.connect() as conn:
+            orphans = conn.execute(
+                """
+                SELECT p.id FROM patients p
+                LEFT JOIN studies s ON s.patient_db_id = p.id
+                WHERE s.id IS NULL
+                """
+            ).fetchall()
+            for row in orphans:
+                conn.execute("DELETE FROM patients WHERE id = ?", (int(row["id"]),))
+            conn.commit()
         return removed
 

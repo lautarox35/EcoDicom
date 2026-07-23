@@ -80,6 +80,20 @@ xattr -cr dist/EcoDICOM.app
 CI: workflow [`.github/workflows/build-macos.yml`](.github/workflows/build-macos.yml)
 (artifact `EcoDICOM-macOS.zip`).
 
+### Actualizar Mac (lo más simple)
+
+1. En el PC/dev, crear y subir un tag:
+   ```bash
+   git tag v0.2.1
+   git push origin v0.2.1
+   ```
+2. Esperar el workflow **Build macOS app** en GitHub Actions.
+3. En la Mac: abrir  
+   https://github.com/lautarox35/EcoDicom/releases  
+   → bajar **EcoDICOM-macOS.zip** → reemplazar `EcoDICOM.app`.
+
+Si macOS bloquea: clic derecho → Abrir, o `xattr -cr EcoDICOM.app`.
+
 ## Dónde se guardan los datos
 
 | Modo | Ubicación |
