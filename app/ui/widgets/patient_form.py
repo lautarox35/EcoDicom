@@ -23,8 +23,12 @@ class PatientForm(QWidget):
         self._build()
 
     def _build(self) -> None:
-        group = QGroupBox("Paciente veterinario")
-        form = QFormLayout(group)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        basic = QGroupBox("Paciente — datos básicos")
+        basic_form = QFormLayout(basic)
 
         self.animal_name = QLineEdit()
         self.patient_id = QLineEdit()
@@ -33,6 +37,21 @@ class PatientForm(QWidget):
         self.breed = QLineEdit()
         self.sex = QComboBox()
         self.sex.addItems(["", "M (Macho)", "F (Hembra)", "O (Otro)", "U (Desconocido)"])
+        self.owner = QLineEdit()
+
+        basic_form.addRow("Nombre del animal", self.animal_name)
+        basic_form.addRow("ID paciente", self.patient_id)
+        basic_form.addRow("Especie", self.species)
+        basic_form.addRow("Raza", self.breed)
+        basic_form.addRow("Sexo", self.sex)
+        basic_form.addRow("Propietario", self.owner)
+        layout.addWidget(basic)
+
+        self.more_box = QGroupBox("Más datos (opcional)")
+        self.more_box.setCheckable(True)
+        self.more_box.setChecked(False)
+        more_form = QFormLayout(self.more_box)
+
         self.age = QLineEdit()
         self.age.setPlaceholderText("Ej. 5 años")
         self.weight = QDoubleSpinBox()
@@ -40,27 +59,34 @@ class PatientForm(QWidget):
         self.weight.setDecimals(2)
         self.weight.setSuffix(" kg")
         self.weight.setSpecialValueText("—")
-        self.owner = QLineEdit()
         self.veterinarian = QLineEdit()
         self.clinic = QLineEdit()
         self.birth_date = QLineEdit()
         self.birth_date.setPlaceholderText("YYYYMMDD (opcional)")
 
-        form.addRow("Nombre del animal", self.animal_name)
-        form.addRow("ID paciente", self.patient_id)
-        form.addRow("Especie", self.species)
-        form.addRow("Raza", self.breed)
-        form.addRow("Sexo", self.sex)
-        form.addRow("Edad", self.age)
-        form.addRow("Peso", self.weight)
-        form.addRow("Propietario", self.owner)
-        form.addRow("Veterinario", self.veterinarian)
-        form.addRow("Clínica", self.clinic)
-        form.addRow("Fecha nacimiento", self.birth_date)
+        more_form.addRow("Edad", self.age)
+        more_form.addRow("Peso", self.weight)
+        more_form.addRow("Veterinario", self.veterinarian)
+        more_form.addRow("Clínica", self.clinic)
+        more_form.addRow("Fecha nacimiento", self.birth_date)
+        layout.addWidget(self.more_box)
+        layout.addStretch(1)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(group)
+        self.more_box.toggled.connect(self._set_more_visible)
+        self._set_more_visible(False)
+
+    def _set_more_visible(self, checked: bool) -> None:
+        form = self.more_box.layout()
+        if form is None:
+            return
+        for i in range(form.rowCount()):
+            for role in (
+                QFormLayout.ItemRole.LabelRole,
+                QFormLayout.ItemRole.FieldRole,
+            ):
+                item = form.itemAt(i, role)
+                if item and item.widget():
+                    item.widget().setVisible(checked)
 
     def _sex_value(self) -> str:
         text = self.sex.currentText()
@@ -103,3 +129,11 @@ class PatientForm(QWidget):
         self.veterinarian.setText(patient.veterinarian)
         self.clinic.setText(patient.clinic)
         self.birth_date.setText(patient.birth_date)
+        has_extra = bool(
+            patient.age
+            or patient.weight_kg
+            or patient.veterinarian
+            or patient.clinic
+            or patient.birth_date
+        )
+        self.more_box.setChecked(has_extra)

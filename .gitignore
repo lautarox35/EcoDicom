@@ -1,3 +1,5 @@
+calibraciones/
+MacOS/
 Estudios/
 *.dcm
 !sample_images/

@@ -41,13 +41,30 @@ class StudyForm(QWidget):
         self.organ = QLineEdit()
         self.organ.setPlaceholderText("Ej. Hígado, Útero, Corazón")
 
+        self.probe = QLineEdit()
+        self.probe.setPlaceholderText("Ej. Convex 3.5 / Linear")
+        self.probe.setToolTip("Tipo de sonda que aparece en pantalla (Prob).")
+        self.frequency = QLineEdit()
+        self.frequency.setPlaceholderText("Ej. 5.0 MHz")
+        self.frequency.setToolTip("Frecuencia de la sonda (Freq).")
+        self.fav = QLineEdit()
+        self.fav.setPlaceholderText("Valor Fav de la pantalla")
+        self.fav.setToolTip("Parámetro Fav del ecógrafo.")
+        self.gain = QLineEdit()
+        self.gain.setPlaceholderText("Ej. 50 / G60")
+        self.gain.setToolTip("Ganancia mostrada en el ecógrafo.")
+
         self.observations = QTextEdit()
         self.observations.setPlaceholderText("Observaciones clínicas...")
-        self.observations.setMaximumHeight(140)
+        self.observations.setMaximumHeight(100)
 
         form.addRow("Fecha y hora", self.datetime_edit)
         form.addRow("Tipo de estudio", self.study_type)
         form.addRow("Órgano evaluado", self.organ)
+        form.addRow("Sonda (Prob)", self.probe)
+        form.addRow("Frecuencia (Freq)", self.frequency)
+        form.addRow("Fav (ecógrafo)", self.fav)
+        form.addRow("Ganancia", self.gain)
         form.addRow("Observaciones", self.observations)
 
         layout = QVBoxLayout(self)
@@ -69,6 +86,10 @@ class StudyForm(QWidget):
             study_datetime=qt_dt,
             study_type=self.study_type.currentText(),
             organ=self.organ.text().strip(),
+            probe=self.probe.text().strip(),
+            frequency=self.frequency.text().strip(),
+            fav=self.fav.text().strip(),
+            gain=self.gain.text().strip(),
             observations=self.observations.toPlainText().strip(),
             study_instance_uid=self._study_uid,
             series_instance_uid=self._series_uid,

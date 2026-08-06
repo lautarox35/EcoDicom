@@ -33,7 +33,7 @@ SAMPLE_IMAGES_DIR = PROJECT_ROOT / "sample_images"
 UID_PREFIX = "1.2.826.0.1.3680043.10.543"
 
 APP_NAME = "EcoDICOM"
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.2.4"
 
 GITHUB_RELEASES_URL = "https://github.com/lautarox35/EcoDicom/releases"
 

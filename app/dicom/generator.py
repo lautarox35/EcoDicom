@@ -115,8 +115,21 @@ def create_ultrasound_dicom(
     ds.ContentTime = now.strftime("%H%M%S")
     ds.ImageType = ["DERIVED", "SECONDARY"]
 
-    if study.observations.strip():
-        ds.ImageComments = study.observations.strip()[:10240]
+    if study.observations.strip() or study.acquisition_lines():
+        ds.ImageComments = study.image_comments()
+
+    # Metadatos de adquisición (carga manual)
+    if study.frequency.strip() or study.fav.strip() or study.gain.strip() or study.probe.strip():
+        acq_bits = []
+        if study.probe.strip():
+            acq_bits.append(f"Prob={study.probe.strip()}")
+        if study.frequency.strip():
+            acq_bits.append(f"Freq={study.frequency.strip()}")
+        if study.fav.strip():
+            acq_bits.append(f"Fav={study.fav.strip()}")
+        if study.gain.strip():
+            acq_bits.append(f"Gain={study.gain.strip()}")
+        ds.AcquisitionDeviceProcessingDescription = "; ".join(acq_bits)[:64]
 
     rows, cols = pixel_array.shape[0], pixel_array.shape[1]
     ds.Rows = rows

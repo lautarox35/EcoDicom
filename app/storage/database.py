@@ -52,6 +52,10 @@ class Database:
                     study_type TEXT,
                     organ TEXT,
                     observations TEXT,
+                    probe TEXT,
+                    frequency TEXT,
+                    fav TEXT,
+                    gain TEXT,
                     folder_path TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (patient_db_id) REFERENCES patients(id)
@@ -69,6 +73,18 @@ class Database:
                 );
                 """
             )
+            self._migrate_studies_acquisition_columns(conn)
+
+    def _migrate_studies_acquisition_columns(self, conn: sqlite3.Connection) -> None:
+        """Agrega columnas Prob/Freq/Fav/Gain si la DB es anterior."""
+        existing = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(studies)").fetchall()
+        }
+        for col in ("probe", "frequency", "fav", "gain"):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE studies ADD COLUMN {col} TEXT")
+        conn.commit()
 
     def upsert_patient(self, patient: Patient) -> int:
         now = datetime.now().isoformat(timespec="seconds")
@@ -146,7 +162,8 @@ class Database:
                     """
                     UPDATE studies SET
                         series_instance_uid=?, study_datetime=?, study_type=?,
-                        organ=?, observations=?, folder_path=?
+                        organ=?, observations=?, probe=?, frequency=?, fav=?, gain=?,
+                        folder_path=?
                     WHERE id=?
                     """,
                     (
@@ -155,6 +172,10 @@ class Database:
                         study.study_type,
                         study.organ,
                         study.observations,
+                        study.probe,
+                        study.frequency,
+                        study.fav,
+                        study.gain,
                         str(folder_path),
                         study_db_id,
                     ),
@@ -166,8 +187,9 @@ class Database:
                     INSERT INTO studies (
                         patient_db_id, study_instance_uid, series_instance_uid,
                         study_datetime, study_type, organ, observations,
+                        probe, frequency, fav, gain,
                         folder_path, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         patient_db_id,
@@ -177,6 +199,10 @@ class Database:
                         study.study_type,
                         study.organ,
                         study.observations,
+                        study.probe,
+                        study.frequency,
+                        study.fav,
+                        study.gain,
                         str(folder_path),
                         now,
                     ),
@@ -215,6 +241,10 @@ class Database:
                     s.study_type,
                     s.organ,
                     s.observations,
+                    s.probe,
+                    s.frequency,
+                    s.fav,
+                    s.gain,
                     s.folder_path,
                     s.created_at,
                     p.id AS patient_db_id,
@@ -253,6 +283,10 @@ class Database:
                     s.study_type,
                     s.organ,
                     s.observations,
+                    s.probe,
+                    s.frequency,
+                    s.fav,
+                    s.gain,
                     s.folder_path,
                     s.created_at,
                     p.id AS patient_db_id,
@@ -340,13 +374,18 @@ class Database:
             conn.execute(
                 """
                 UPDATE studies SET
-                    study_type=?, organ=?, observations=?
+                    study_type=?, organ=?, observations=?,
+                    probe=?, frequency=?, fav=?, gain=?
                 WHERE id=?
                 """,
                 (
                     study_fields.get("study_type", ""),
                     study_fields.get("organ", ""),
                     study_fields.get("observations", ""),
+                    study_fields.get("probe", ""),
+                    study_fields.get("frequency", ""),
+                    study_fields.get("fav", ""),
+                    study_fields.get("gain", ""),
                     study_db_id,
                 ),
             )

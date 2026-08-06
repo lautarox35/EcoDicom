@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QGroupBox, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGroupBox, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from app.device.capture import _configure_capture, _open_capture
 from app.device.enhance import EnhanceSettings, enhance_frame
@@ -111,7 +111,12 @@ class LivePreview(QWidget):
             "Sin vista previa\n\nSeleccione la capturadora easierCAP"
         )
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_label.setMinimumSize(320, 240)
+        self.video_label.setMinimumSize(240, 160)
+        # Ignorar sizeHint del pixmap: si no, al agrandar la ventana el live
+        # “roba” espacio al panel de capturas.
+        self.video_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+        )
         self.video_label.setStyleSheet(
             "QLabel { background: #111; color: #aaa; border: 1px solid #444; }"
         )

@@ -35,6 +35,10 @@ def read_dicom_summary(path: Path) -> dict[str, Any]:
         "PatientBirthDate": _tag(ds, "PatientBirthDate"),
         "PatientSpeciesDescription": _tag(ds, "PatientSpeciesDescription"),
         "PatientBreedDescription": _tag(ds, "PatientBreedDescription"),
+        "AcquisitionDeviceProcessingDescription": _tag(
+            ds, "AcquisitionDeviceProcessingDescription"
+        ),
+        "ImageComments": _tag(ds, "ImageComments"),
         "ResponsiblePerson": _tag(ds, "ResponsiblePerson"),
         "InstitutionName": _tag(ds, "InstitutionName"),
         "ReferringPhysicianName": _tag(ds, "ReferringPhysicianName"),
@@ -81,12 +85,45 @@ def dicom_pixel_rgb(path: Path) -> Optional[np.ndarray]:
     return None
 
 
+def dicom_pixel_gray(path: Path) -> Optional[np.ndarray]:
+    """
+    Devuelve Pixel Data en escala de grises uint8 (H×W).
+
+    Independiente del render en pantalla; usa el array DICOM original.
+    """
+    from app.analysis.echogenicity.grayscale import to_grayscale_u8
+
+    rgb = dicom_pixel_rgb(path)
+    if rgb is None:
+        return None
+    try:
+        return to_grayscale_u8(rgb)
+    except ValueError:
+        return None
+
+
+def dicom_pixel_spacing_mm(path: Path) -> Optional[tuple[float, float]]:
+    """``(row_mm, col_mm)`` desde calibración DICOM, o None."""
+    from app.analysis.calibration.reader import load_image_calibration
+
+    return load_image_calibration(path).spacing_row_col
+
+
+def dicom_image_calibration(path: Path):
+    """Calibración espacial completa para un archivo DICOM."""
+    from app.analysis.calibration.reader import load_image_calibration
+
+    return load_image_calibration(path)
+
+
 def format_summary_text(summary: dict[str, Any]) -> str:
     labels = [
         ("Paciente", "PatientName"),
         ("ID paciente", "PatientID"),
         ("Especie", "PatientSpeciesDescription"),
         ("Raza", "PatientBreedDescription"),
+        ("Adquisición", "AcquisitionDeviceProcessingDescription"),
+        ("Comentarios", "ImageComments"),
         ("Sexo", "PatientSex"),
         ("Edad", "PatientAge"),
         ("Peso (kg)", "PatientWeight"),
@@ -128,10 +165,22 @@ def update_dicom_metadata(path: Path, patient: Patient, study: Study) -> None:
     apply_veterinary_patient_tags(ds, patient)
     ds.StudyDescription = study.study_description()
     ds.SeriesDescription = study.study_description()
-    if study.observations.strip():
-        ds.ImageComments = study.observations.strip()[:10240]
+    comments = study.image_comments()
+    if comments:
+        ds.ImageComments = comments
     elif hasattr(ds, "ImageComments"):
         ds.ImageComments = ""
+    if study.frequency.strip() or study.fav.strip() or study.gain.strip() or study.probe.strip():
+        bits = []
+        if study.probe.strip():
+            bits.append(f"Prob={study.probe.strip()}")
+        if study.frequency.strip():
+            bits.append(f"Freq={study.frequency.strip()}")
+        if study.fav.strip():
+            bits.append(f"Fav={study.fav.strip()}")
+        if study.gain.strip():
+            bits.append(f"Gain={study.gain.strip()}")
+        ds.AcquisitionDeviceProcessingDescription = "; ".join(bits)[:64]
     ds.save_as(path, enforce_file_format=True)
 
 

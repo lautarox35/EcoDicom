@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QSplitter,
     QStatusBar,
     QVBoxLayout,
     QWidget,
@@ -45,27 +48,108 @@ class MainWindow(QMainWindow):
         self.refresh_capture_devices()
 
     def _build(self) -> None:
+        help_menu = self.menuBar().addMenu("Ayuda")
+        act_updates = help_menu.addAction("Buscar actualizaciones…")
+        act_updates.triggered.connect(self.on_check_updates)
+
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
 
-        panels = QHBoxLayout()
-        self.patient_form = PatientForm()
+        panels = QSplitter(Qt.Orientation.Horizontal)
+        panels.setChildrenCollapsible(False)
+        panels.setHandleWidth(6)
+        panels.setStyleSheet(
+            "QSplitter::handle { background: #c5c5c5; }"
+            "QSplitter::handle:hover { background: #1976d2; }"
+        )
 
-        center = QVBoxLayout()
+        self.patient_form = PatientForm()
+        self.patient_form.setMinimumWidth(200)
+
+        # Vista en vivo / capturas: divisor vertical arrastrable
+        center_split = QSplitter(Qt.Orientation.Vertical)
+        center_split.setChildrenCollapsible(False)
+        center_split.setHandleWidth(6)
+        center_split.setStyleSheet(
+            "QSplitter::handle { background: #c5c5c5; }"
+            "QSplitter::handle:hover { background: #1976d2; }"
+        )
         self.live_preview = LivePreview()
         self.image_preview = ImagePreview()
-        center.addWidget(self.live_preview, stretch=3)
-        center.addWidget(self.image_preview, stretch=2)
-        center_wrap = QWidget()
-        center_wrap.setLayout(center)
+        self.live_preview.setMinimumHeight(120)
+        self.image_preview.setMinimumHeight(160)
+        # Al redimensionar la ventana: capturas crecen; live mantiene su alto
+        # (el usuario puede cambiar la proporción arrastrando el divisor).
+        self.live_preview.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        )
+        self.image_preview.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        center_split.addWidget(self.live_preview)
+        center_split.addWidget(self.image_preview)
+        center_split.setStretchFactor(0, 0)
+        center_split.setStretchFactor(1, 1)
+        center_split.setSizes([240, 480])
+
+        # Columna derecha: estudio + herramientas de acción
+        right = QWidget()
+        right.setMinimumWidth(220)
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
 
         self.study_form = StudyForm()
+        right_layout.addWidget(self.study_form)
 
-        panels.addWidget(self.patient_form, stretch=2)
-        panels.addWidget(center_wrap, stretch=4)
-        panels.addWidget(self.study_form, stretch=2)
-        root.addLayout(panels, stretch=1)
+        tools = QGroupBox("Herramientas")
+        tools_layout = QVBoxLayout(tools)
+        tools_layout.setSpacing(6)
+
+        self.btn_import = QPushButton("Importar imagen")
+        self.btn_import.setToolTip("Abrir imágenes desde disco (PNG, JPG, etc.).")
+        self.btn_capture = QPushButton("Capturar imagen")
+        self.btn_capture.setToolTip("Congela el frame actual de la vista en vivo.")
+        self.btn_create = QPushButton("1. Crear DICOM")
+        self.btn_create.setToolTip(
+            "Genera los archivos .dcm y los registra en la base local."
+        )
+        self.btn_create.setStyleSheet(
+            "QPushButton { font-weight: 600; padding: 8px 12px; }"
+        )
+        self.btn_save = QPushButton("2. Guardar estudio")
+        self.btn_save.setToolTip(
+            "Guarda el estudio. Si aún no hay DICOM, los crea automáticamente."
+        )
+        self.btn_studies = QPushButton("Ver estudios")
+        self.btn_studies.setToolTip("Abrir, editar o anotar estudios ya guardados.")
+
+        for btn in (
+            self.btn_import,
+            self.btn_capture,
+            self.btn_create,
+            self.btn_save,
+            self.btn_studies,
+        ):
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            btn.setMinimumHeight(32)
+            tools_layout.addWidget(btn)
+
+        right_layout.addWidget(tools)
+        right_layout.addStretch(1)
+
+        panels.addWidget(self.patient_form)
+        panels.addWidget(center_split)
+        panels.addWidget(right)
+        panels.setStretchFactor(0, 0)
+        panels.setStretchFactor(1, 1)
+        panels.setStretchFactor(2, 0)
+        panels.setSizes([280, 720, 280])
+        root.addWidget(panels, stretch=1)
+
+        self._view_splitter = center_split
+        self._main_splitter = panels
 
         capture_row = QHBoxLayout()
         capture_row.addWidget(QLabel("Capturadora:"))
@@ -84,25 +168,6 @@ class MainWindow(QMainWindow):
         capture_row.addWidget(self.chk_enhance)
         root.addLayout(capture_row)
 
-        buttons = QHBoxLayout()
-        self.btn_import = QPushButton("Importar imagen")
-        self.btn_capture = QPushButton("Capturar imagen")
-        self.btn_create = QPushButton("Crear DICOM")
-        self.btn_save = QPushButton("Guardar estudio")
-        self.btn_studies = QPushButton("Ver estudios DICOM")
-        self.btn_updates = QPushButton("Buscar actualizaciones")
-
-        for btn in (
-            self.btn_import,
-            self.btn_capture,
-            self.btn_create,
-            self.btn_save,
-            self.btn_studies,
-            self.btn_updates,
-        ):
-            buttons.addWidget(btn)
-        root.addLayout(buttons)
-
         self.capture_label = QLabel("easierCAP: —")
         self.capture_label.setStyleSheet("color: #666;")
         root.addWidget(self.capture_label)
@@ -110,7 +175,7 @@ class MainWindow(QMainWindow):
         status = QStatusBar()
         self.setStatusBar(status)
         status.showMessage(
-            "Elija AV TO USB2.0 [easierCAP] y pulse Iniciar vista en vivo."
+            "Elija AV TO USB2.0 [easierCAP] → Iniciar vista en vivo → Capturar → Crear DICOM."
         )
 
         self.btn_import.clicked.connect(self.on_import)
@@ -118,7 +183,6 @@ class MainWindow(QMainWindow):
         self.btn_create.clicked.connect(self.on_create_dicom)
         self.btn_save.clicked.connect(self.on_save_study)
         self.btn_studies.clicked.connect(self.on_view_studies)
-        self.btn_updates.clicked.connect(self.on_check_updates)
         self.btn_refresh_cameras.clicked.connect(self.refresh_capture_devices)
         self.btn_start_preview.clicked.connect(self.start_live_preview)
         self.combo_camera.currentIndexChanged.connect(self._on_camera_changed)
